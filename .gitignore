@@ -1,0 +1,14 @@
+# Pasta de compilação e bibliotecas (Lixo pesado)
+.pio/
+
+# Configurações locais do VS Code (Variam de PC para PC)
+.vscode/
+
+# Arquivos binários que o ESP32 gera
+*.bin
+*.elf
+*.hex
+
+# Arquivos temporários do Linux/Sistema
+.DS_Store
+Thumbs.db
