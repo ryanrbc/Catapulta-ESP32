@@ -10,6 +10,9 @@
 #define IN4 4
 #define SERVO_PIN 19
 
+#define LED_VERDE 21
+#define LED_AMARELO 22
+
 
 AccelStepper stepper(AccelStepper::HALF4WIRE, IN1, IN3, IN2, IN4);
 Servo gatilho;
@@ -50,9 +53,15 @@ const char index_html[] PROGMEM = R"rawliteral(
 
 void setup() {
     Serial.begin(115200);
-    
-stepper.setMaxSpeed(200);      
-stepper.setAcceleration(100);  
+
+    pinMode(LED_VERDE, OUTPUT);
+    pinMode(LED_AMARELO, OUTPUT);
+
+    digitalWrite(LED_VERDE, LOW);
+    digitalWrite(LED_AMARELO, LOW);
+        
+    stepper.setMaxSpeed(200);      
+    stepper.setAcceleration(100);  
 
     gatilho.attach(SERVO_PIN);
     gatilho.write(0); 
@@ -82,11 +91,25 @@ stepper.setAcceleration(100);
     });
 
     server.begin();
+
+    digitalWrite(LED_VERDE, HIGH);
+    Serial.println("Catapulta Online e LED Verde Aceso");
 }
 
 void loop() {
     
     stepper.run(); 
+
+    if (stepper.distanceToGo() != 0)
+    {
+        digitalWrite(LED_AMARELO,HIGH);
+    }
+
+    else
+    {
+        digitalWrite(LED_AMARELO, LOW);
+    }
+    
 
     if (dispararAgora) {
         
