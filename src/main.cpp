@@ -24,7 +24,7 @@ AccelStepper stepperA(AccelStepper::HALF4WIRE, IN1_A, IN3_A, IN2_A, IN4_A);
 AccelStepper stepperB(AccelStepper::HALF4WIRE, IN1_B, IN3_B, IN2_B, IN4_B);
 Servo gatilho;
 
-const char* ssid = "Catapulta_Equipe_01";
+const char* ssid = "Catapulta_IPE_I";
 AsyncWebServer server(80);
 
 bool dispararAgora = false;
@@ -32,16 +32,16 @@ bool dispararAgora = false;
 // HTML 
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
-<html>
+<html lang="pt-br">
 <head>
-    <title>Catapulta 2026</title>
+    <meta charset="UTF-8>> <title>Catapulta IPE I</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body { font-family: sans-serif; text-align: center; background: #1a1a1a; color: white; }
-        .card { background: #1c23a2; padding: 20px; border-radius: 15px; display: inline-block; margin-top: 20px; }
+        .card { background: #0072BE; padding: 20px; border-radius: 15px; display: inline-block; margin-top: 20px; }
         .slider { width: 280px; height: 20px; }
-        .btn { background: #e74c3c; color: white; padding: 20px; border-radius: 10px; border: none; font-size: 20px; cursor: pointer; width: 100%; margin-top: 15px; }
-        #val { font-size: 40px; color: #1abc9c; }
+        .btn { background: #ee151f; color: white; padding: 20px; border-radius: 10px; border: none; font-size: 20px; cursor: pointer; width: 100%; margin-top: 15px; }
+        #val { font-size: 40px; color: #EAC200; }
     </style>
 </head>
 <body>
