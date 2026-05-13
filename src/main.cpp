@@ -4,17 +4,24 @@
 #include <AccelStepper.h>
 #include <ESP32Servo.h>
 
-#define IN1 17
-#define IN2 16
-#define IN3 5
-#define IN4 4
+#define IN1_A 17
+#define IN2_A 16
+#define IN3_A 5
+#define IN4_A 4
+
+#define IN1_B 27
+#define IN2_B 26
+#define IN3_B 25
+#define IN4_B 33
+
 #define SERVO_PIN 19
 
 #define LED_VERDE 21
 #define LED_AMARELO 22
 
 
-AccelStepper stepper(AccelStepper::HALF4WIRE, IN1, IN3, IN2, IN4);
+AccelStepper stepperA(AccelStepper::HALF4WIRE, IN1_A, IN3_A, IN2_A, IN4_A);
+AccelStepper stepperB(AccelStepper::HALF4WIRE, IN1_B, IN3_B, IN2_B, IN4_B);
 Servo gatilho;
 
 const char* ssid = "Catapulta_Equipe_01";
@@ -60,8 +67,11 @@ void setup() {
     digitalWrite(LED_VERDE, LOW);
     digitalWrite(LED_AMARELO, LOW);
         
-    stepper.setMaxSpeed(200);      
-    stepper.setAcceleration(100);  
+    stepperA.setMaxSpeed(500);      
+    stepperA.setAcceleration(100); 
+    
+    stepperB.setMaxSpeed(500);
+    stepperB.setAcceleration(100);
 
     gatilho.attach(SERVO_PIN);
     gatilho.write(0); 
@@ -77,9 +87,10 @@ void setup() {
     server.on("/setDist", HTTP_GET, [](AsyncWebServerRequest *request){
         if (request->hasParam("val")) {
             float v = request->getParam("val")->value().toFloat();
-            // Mapeamento: 0.5m = 0 passos | 4.0m = 2000 passos (esperar a estrutura estar pronta para verificar de forma mais precisa)
-            long p = map(v * 10, 5, 40, 0, 2048); 
-            stepper.moveTo(p);
+            // Mapeamento: 0.5m = 0 passos | 4.0m = 2048 passos (esperar a estrutura estar pronta para verificar de forma mais precisa)
+            long p = map(v * 10, 5, 40, 0, 6144); 
+            stepperA.moveTo(-p);
+            stepperB.moveTo(p);
             Serial.printf("Alvo: %.1f m -> Passos: %ld\n", v, p);
         }
         request->send(200, "text/plain", "OK");
@@ -98,9 +109,10 @@ void setup() {
 
 void loop() {
     
-    stepper.run(); 
+    stepperA.run(); 
+    stepperB.run();
 
-    if (stepper.distanceToGo() != 0)
+    if (stepperA.distanceToGo() != 0 || stepperB.distanceToGo() != 0)
     {
         digitalWrite(LED_AMARELO,HIGH);
     }
@@ -113,10 +125,10 @@ void loop() {
 
     if (dispararAgora) {
         
-        if (stepper.distanceToGo() == 0) {
+        if (stepperA.distanceToGo() == 0 && stepperB.distanceToGo() == 0) {
             Serial.println("DISPARANDO!");
             gatilho.write(90); 
-            delay(1000);
+            delay(3000);
             gatilho.write(0); 
             dispararAgora = false;
         } else {
