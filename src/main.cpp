@@ -4,19 +4,19 @@
 #include <AccelStepper.h>
 #include <ESP32Servo.h>
 
-#define IN1_A 17
-#define IN2_A 16
-#define IN3_A 5
+#define IN1_A 5
+#define IN2_A 17
+#define IN3_A 16
 #define IN4_A 4
 
-#define IN1_B 27
-#define IN2_B 26
-#define IN3_B 25
-#define IN4_B 33
+#define IN1_B 33
+#define IN2_B 25
+#define IN3_B 26
+#define IN4_B 27
 
 #define SERVO_PIN 19
 
-#define LED_VERDE 21
+#define LED_VERDE 23
 #define LED_AMARELO 22
 
 
