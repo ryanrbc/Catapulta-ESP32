@@ -19,7 +19,6 @@
 #define LED_VERDE 23
 #define LED_AMARELO 22
 
-
 AccelStepper stepperA(AccelStepper::HALF4WIRE, IN1_A, IN3_A, IN2_A, IN4_A);
 AccelStepper stepperB(AccelStepper::HALF4WIRE, IN1_B, IN3_B, IN2_B, IN4_B);
 Servo gatilho;
@@ -27,14 +26,27 @@ Servo gatilho;
 const char* ssid = "Catapulta_IPE_I";
 AsyncWebServer server(80);
 
+// Variáveis de controle de fluxo e tempo
 bool dispararAgora = false;
+bool precisaResetarWeb = false; 
+unsigned long cronometroSequencia = 0;
 
-// HTML 
+// Nova Máquina de Estados Temporal
+enum EstadoSistema { 
+    IDLE, 
+    SERVO_ABERTO, 
+    RETORNANDO_AO_ZERO, 
+    FECHANDO_SERVO 
+};
+EstadoSistema estadoAtual = IDLE;
+
+// HTML Otimizado com Polling para Reset Automático da Barra
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
-    <meta charset="UTF-8>> <title>Catapulta IPE I</title>
+    <meta charset="UTF-8">
+    <title>Catapulta IPE I</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body { font-family: sans-serif; text-align: center; background: #1a1a1a; color: white; }
@@ -48,12 +60,28 @@ const char index_html[] PROGMEM = R"rawliteral(
     <div class="card">
         <h1>CATAPULTA</h1>
         <div id="val">0.5</div><p>Metros</p>
-        <input type="range" min="0.5" max="4.0" step="0.1" value="0.5" class="slider" 
+        <input type="range" min="0.5" max="4.0" step="0.1" value="0.5" class="slider" id="sliderDist"
                oninput="document.getElementById('val').innerHTML = this.value" 
                onchange="fetch('/setDist?val=' + this.value)">
         <br>
         <button class="btn" onclick="fetch('/fire')">LANÇAR!</button>
     </div>
+
+    <script>
+        // Verifica a cada 1 segundo se a catapulta concluiu o ciclo de reset
+        setInterval(function() {
+            fetch('/checkReset')
+                .then(response => response.text())
+                .then(data => {
+                    if (data === "1") {
+                        // Retorna os elementos da página para a posição inicial (0.5m)
+                        document.getElementById('sliderDist').value = "0.5";
+                        document.getElementById('val').innerHTML = "0.5";
+                        console.log("Interface da catapulta resetada!");
+                    }
+                });
+        }, 1000);
+    </script>
 </body>
 </html>
 )rawliteral";
@@ -73,11 +101,14 @@ void setup() {
     stepperB.setMaxSpeed(500);
     stepperB.setAcceleration(100);
 
-    gatilho.attach(SERVO_PIN);
-    gatilho.write(0); 
+    ESP32PWM::allocateTimer(0);
+    ESP32PWM::allocateTimer(1);
+    gatilho.setPeriodHertz(50); 
+    gatilho.attach(SERVO_PIN, 544, 2400); 
+    gatilho.write(150); // Posição inicial fechada/armada
 
     WiFi.softAP(ssid);
-    Serial.println("Conecte no Wi-Fi: Catapulta_Equipe_01");
+    Serial.println("Conecte no Wi-Fi: Catapulta_IPE_I");
     Serial.println("Acesse: 192.168.4.1");
 
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -87,8 +118,12 @@ void setup() {
     server.on("/setDist", HTTP_GET, [](AsyncWebServerRequest *request){
         if (request->hasParam("val")) {
             float v = request->getParam("val")->value().toFloat();
-            // Mapeamento: 0.5m = 0 passos | 4.0m = 2048 passos (esperar a estrutura estar pronta para verificar de forma mais precisa)
             long p = map(v * 10, 5, 40, 0, 6144); 
+            
+            // Garante que as bobinas liguem para mover os motores até o alvo
+            stepperA.enableOutputs();
+            stepperB.enableOutputs();
+            
             stepperA.moveTo(-p);
             stepperB.moveTo(p);
             Serial.printf("Alvo: %.1f m -> Passos: %ld\n", v, p);
@@ -101,6 +136,16 @@ void setup() {
         request->send(200, "text/plain", "Fogo!");
     });
 
+    // Endpoint que a página web consulta para saber se deve resetar a barra
+    server.on("/checkReset", HTTP_GET, [](AsyncWebServerRequest *request){
+        if (precisaResetarWeb) {
+            request->send(200, "text/plain", "1"); // Envia sinal de reset
+            precisaResetarWeb = false;             // Limpa a flag
+        } else {
+            request->send(200, "text/plain", "0"); // Sem alterações
+        }
+    });
+
     server.begin();
 
     digitalWrite(LED_VERDE, HIGH);
@@ -108,31 +153,88 @@ void setup() {
 }
 
 void loop() {
-    
+    // Alimenta os motores de passo continuamente para executarem seus movimentos
     stepperA.run(); 
     stepperB.run();
 
-    if (stepperA.distanceToGo() != 0 || stepperB.distanceToGo() != 0)
-    {
-        digitalWrite(LED_AMARELO,HIGH);
-    }
-
-    else
-    {
+    // Controle do LED indicador de movimento
+    if (stepperA.distanceToGo() != 0 || stepperB.distanceToGo() != 0) {
+        digitalWrite(LED_AMARELO, HIGH);
+    } else {
         digitalWrite(LED_AMARELO, LOW);
     }
     
-
-    if (dispararAgora) {
+    // EXECUÇÃO TEMPORAL DA CRONOLOGIA DO PROJETO
+    switch (estadoAtual) {
         
-        if (stepperA.distanceToGo() == 0 && stepperB.distanceToGo() == 0) {
-            Serial.println("DISPARANDO!");
-            gatilho.write(90); 
-            delay(3000);
-            gatilho.write(0); 
-            dispararAgora = false;
-        } else {
-            Serial.println("Aguardando motor chegar na posição...");
-        }
+        case IDLE:
+            if (dispararAgora) {
+                // Só inicia se os motores já terminaram de tensionar até o alvo
+                if (stepperA.distanceToGo() == 0 && stepperB.distanceToGo() == 0) {
+                    Serial.println("\n--- INICIANDO LANÇAMENTO ---");
+                    
+                    // 1. Desliga os motores de passo para focar a corrente no servo
+                    stepperA.disableOutputs();
+                    stepperB.disableOutputs();
+                    
+                    // 2. O servo abre fazendo o lançamento
+                    gatilho.write(50); 
+                    Serial.println("[PASSO 1] Servo aberto (Lançamento feito).");
+                    
+                    cronometroSequencia = millis(); 
+                    estadoAtual = SERVO_ABERTO;
+                } else {
+                    Serial.println("Aviso: Motores ainda estão se posicionando.");
+                }
+                dispararAgora = false; 
+            }
+            break;
+
+        case SERVO_ABERTO:
+            // Aguarda 800ms com o servo aberto para a colher/braço subir livremente
+            if (millis() - cronometroSequencia >= 800) {
+                Serial.println("[PASSO 2] Servo mantido aberto. Ligando motores de passo para recuar.");
+                
+                // 3. O motor de passo liga novamente
+                stepperA.enableOutputs();
+                stepperB.enableOutputs();
+                
+                // 4. Determina o retorno para a posição zero (Catapulta inicial)
+                stepperA.moveTo(0);
+                stepperB.moveTo(0);
+                
+                estadoAtual = RETORNANDO_AO_ZERO;
+            }
+            break;
+
+        case RETORNANDO_AO_ZERO:
+            // 5. Espera os motores de passo chegarem fisicamente no passo zero
+            if (stepperA.distanceToGo() == 0 && stepperB.distanceToGo() == 0) {
+                Serial.println("[PASSO 3] Motores retornaram ao zero. Desligando corrente dos motores.");
+                
+                // Desliga o motor de passo novamente conforme solicitado
+                stepperA.disableOutputs();
+                stepperB.disableOutputs();
+                
+                // 6. O servo volta a fechar para travar o sistema
+                gatilho.write(150); 
+                Serial.println("[PASSO 4] Servo fechado (Pronto para rearmar).");
+                
+                cronometroSequencia = millis();
+                estadoAtual = FECHANDO_SERVO;
+            }
+            break;
+
+        case FECHANDO_SERVO:
+            // Aguarda 1 segundo para o servo fechar totalmente antes de liberar a interface web
+            if (millis() - cronometroSequencia >= 1000) {
+                Serial.println("[PASSO 5] Ciclo finalizado com sucesso.");
+                
+                // 7. Ativa a flag que avisa a página web para retornar a barra para 0.5m
+                precisaResetarWeb = true; 
+                
+                estadoAtual = IDLE; // Retorna ao estado de espera por novos comandos
+            }
+            break;
     }
 }
