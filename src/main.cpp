@@ -59,8 +59,8 @@ const char index_html[] PROGMEM = R"rawliteral(
 <body>
     <div class="card">
         <h1>CATAPULTA</h1>
-        <div id="val">0.5</div><p>Metros</p>
-        <input type="range" min="0.5" max="4.0" step="0.1" value="0.5" class="slider" id="sliderDist"
+        <div id="val">0</div><p>Distância</p>
+        <input type="range" min="0" max="4.0" step="0.1" value="0" class="slider" id="sliderDist"
                oninput="document.getElementById('val').innerHTML = this.value" 
                onchange="fetch('/setDist?val=' + this.value)">
         <br>
@@ -75,8 +75,8 @@ const char index_html[] PROGMEM = R"rawliteral(
                 .then(data => {
                     if (data === "1") {
                         // Retorna os elementos da página para a posição inicial (0.5m)
-                        document.getElementById('sliderDist').value = "0.5";
-                        document.getElementById('val').innerHTML = "0.5";
+                        document.getElementById('sliderDist').value = "0";
+                        document.getElementById('val').innerHTML = "0";
                         console.log("Interface da catapulta resetada!");
                     }
                 });
@@ -89,17 +89,17 @@ const char index_html[] PROGMEM = R"rawliteral(
 void setup() {
     Serial.begin(115200);
 
-    pinMode(LED_VERDE, OUTPUT);
+    //pinMode(LED_VERDE, OUTPUT);
     pinMode(LED_AMARELO, OUTPUT);
 
-    digitalWrite(LED_VERDE, LOW);
+    //digitalWrite(LED_VERDE, LOW);
     digitalWrite(LED_AMARELO, LOW);
-        
-    stepperA.setMaxSpeed(500);      
-    stepperA.setAcceleration(100); 
+             
+    stepperA.setMaxSpeed(150);      
+    stepperA.setAcceleration(30); 
     
-    stepperB.setMaxSpeed(500);
-    stepperB.setAcceleration(100);
+    stepperB.setMaxSpeed(150);
+    stepperB.setAcceleration(30);
 
     ESP32PWM::allocateTimer(0);
     ESP32PWM::allocateTimer(1);
@@ -118,15 +118,17 @@ void setup() {
     server.on("/setDist", HTTP_GET, [](AsyncWebServerRequest *request){
         if (request->hasParam("val")) {
             float v = request->getParam("val")->value().toFloat();
-            long p = map(v * 10, 5, 40, 0, 6144); 
+            float p = (43.831*v*v + 775.51*v + 1009.8);
+            int passo = static_cast<int>(p);
+            //long p = map(v * 10, 5, 40, 0, 6144); 
             
             // Garante que as bobinas liguem para mover os motores até o alvo
             stepperA.enableOutputs();
             stepperB.enableOutputs();
             
-            stepperA.moveTo(-p);
-            stepperB.moveTo(p);
-            Serial.printf("Alvo: %.1f m -> Passos: %ld\n", v, p);
+            stepperA.moveTo(-2*passo);
+            stepperB.moveTo(2*passo);
+            Serial.printf("Alvo: %.1f m -> Passos: %ld\n", v, v);
         }
         request->send(200, "text/plain", "OK");
     });
@@ -148,12 +150,29 @@ void setup() {
 
     server.begin();
 
-    digitalWrite(LED_VERDE, HIGH);
+    //digitalWrite(LED_VERDE, HIGH);
     Serial.println("Catapulta Online e LED Verde Aceso");
 }
 
 void loop() {
     // Alimenta os motores de passo continuamente para executarem seus movimentos
+    
+    if (estadoAtual == IDLE) {
+        // Usa o valor absoluto (abs) porque o stepperA se move para o lado negativo (-2*v)
+        if (abs(stepperA.currentPosition()) >= 4096) {
+            stepperA.setMaxSpeed(30);   // Velocidade reduzida = Mais torque no final
+            stepperB.setMaxSpeed(30);
+        } else {
+            stepperA.setMaxSpeed(150);  // Velocidade normal no começo do curso
+            stepperB.setMaxSpeed(150);
+        }
+    } 
+    else if (estadoAtual == SERVO_ABERTO || estadoAtual == RETORNANDO_AO_ZERO) {
+        // Garante que para voltar para a posição zero, o motor use a velocidade máxima
+        stepperA.setMaxSpeed(600);
+        stepperB.setMaxSpeed(600);
+    }
+
     stepperA.run(); 
     stepperB.run();
 
